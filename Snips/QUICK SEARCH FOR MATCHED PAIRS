@@ -1,0 +1,4 @@
+SELECT distinct utm_source, utm_campaign
+FROM page_visits;
+
+--SHOWs you each distinct PAIR

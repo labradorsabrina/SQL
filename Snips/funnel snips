@@ -1,0 +1,76 @@
+-- uses the case to only count one group. In this case it is choosing only the control group
+
+select modal_text,
+count (
+distinct case
+when ab_group = 'control' then user_id
+end) as 'control_clicks'
+from onboarding_modals
+group by 1
+order by 1;
+
+--Adding in the variant group
+select modal_text,
+count (
+distinct case
+when ab_group = 'control' then user_id
+end) as 'control_clicks',
+count(distinct case
+     when ab_group = 'variant' then user_id
+     end) as 'variant_clicks'
+from onboarding_modals
+group by 1
+order by 1;
+
+
+--Using three seperate tables to create a funnel
+ select * from
+ browse as 'b'
+ left join checkout as 'c'
+ on c.user_id = b.user_id
+ left join purchase as 'p'
+on p.user_id = c.user_id
+limit 50;
+
+--Limiting the number of columns
+select distinct b.browse_date, b.user_id, c.user_id is not null 'is_checkout', p.user_id is not null as 'is_purchase' from
+browse as 'b'
+left join checkout as 'c'
+on c.user_id = b.user_id
+left join purchase as 'p'
+on p.user_id = c.user_id
+limit 50;
+
+--Now we are calculating the number of customers at each level of the funnel
+WITH funnels AS (
+  SELECT DISTINCT b.browse_date,
+     b.user_id,
+     c.user_id IS NOT NULL AS 'is_checkout',
+     p.user_id IS NOT NULL AS 'is_purchase'
+  FROM browse AS 'b'
+  LEFT JOIN checkout AS 'c'
+    ON c.user_id = b.user_id
+  LEFT JOIN purchase AS 'p'
+    ON p.user_id = c.user_id)
+SELECT count(distinct user_id) as 'num_browse', sum(is_checkout) as 'num_checkout', sum(is_purchase) as 'num_purchase', 100 * sum(is_checkout) / count(user_id) as 'Percent Checkout', 100 * sum(is_purchase)/sum(is_checkout) as 'Percent Purchase'
+from funnels;
+
+--Looking at conversion rates for specific dates
+WITH funnels AS (
+  SELECT DISTINCT b.browse_date,
+     b.user_id,
+     c.user_id IS NOT NULL AS 'is_checkout',
+     p.user_id IS NOT NULL AS 'is_purchase'
+  FROM browse AS 'b'
+  LEFT JOIN checkout AS 'c'
+    ON c.user_id = b.user_id
+  LEFT JOIN purchase AS 'p'
+    ON p.user_id = c.user_id)
+SELECT browse_date, COUNT(*) AS 'num_browse',
+   SUM(is_checkout) AS 'num_checkout',
+   SUM(is_purchase) AS 'num_purchase',
+   100 * SUM(is_checkout) / COUNT(user_id) AS 'browse_to_checkout',
+   100 * SUM(is_purchase) / SUM(is_checkout) AS 'checkout_to_purchase', (100 * SUM(is_checkout) / COUNT(user_id)) - (100 * SUM(is_purchase) / SUM(is_checkout)) as 'Difference'
+FROM funnels
+group by 1
+order by 1;

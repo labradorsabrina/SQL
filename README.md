@@ -1,3 +1,5 @@
-# CV
+# :ledger: SQL #
 
-This is my CV, to download the readable one feel free to use this [link](https://docs.google.com/document/d/1LNaoidIVzbfTE5LsYYuBejfE9qeltHx_JQ0y_oAT8eE/edit?usp=sharing)
+* This is my storage of codes, snips and documents related to SQL.
+
+Please feel free to download and use them as your own.

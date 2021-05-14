@@ -1,0 +1,227 @@
+variables:
+  DotNetCoreSdkVersion: '5.0.100-rc.1.20452.10'
+  NUGET_PACKAGES: '$(Pipeline.Workspace)/.nuget/packages'
+
+jobs:
+- job: linux_build
+  displayName: 'Linux Build'
+  pool:
+    vmimage: 'ubuntu-latest'
+  steps:
+  - template: '.ci/build-steps.yml'
+
+- job: windows_build
+  displayName: 'Windows Build'
+  pool:
+    vmimage: 'windows-latest'
+  steps:
+  - template: '.ci/build-steps.yml'
+  - task: DotNetCoreCLI@2
+    displayName: 'Publish SideBySide (net472)'
+    inputs:
+      command: 'publish'
+      arguments: '-c Release -f net472 tests/SideBySide/SideBySide.csproj'
+      publishWebProjects: false
+      zipAfterPublish: false
+  - task: PublishPipelineArtifact@0
+    inputs:
+      artifactName: 'SideBySide-net472-$(Agent.OS)'
+      targetPath: 'tests/SideBySide/bin/Release/net472/publish'
+
+- job: windows_baseline
+  displayName: 'Baseline'
+  pool:
+    vmimage: 'windows-latest'
+  steps:
+  - template: '.ci/install-mysql-windows.yml'
+  - task: CopyFiles@2
+    displayName: 'Copy config.json'
+    inputs:
+      sourceFolder: '.ci/config'
+      contents: 'config.json'
+      targetFolder: 'tests/SideBySide'
+  - task: UseDotNet@2
+    displayName: 'Install .NET Core'
+    inputs:
+      version: $(DotNetCoreSdkVersion)
+  - task: DotNetCoreCLI@2
+    displayName: 'Restore packages'
+    inputs:
+      command: 'restore'
+      arguments: 'tests\MySqlConnector.Tests\MySqlConnector.Tests.csproj /p:Configuration=Baseline'
+      verbosityRestore: 'minimal'
+  - task: DotNetCoreCLI@2
+    displayName: 'Unit tests'
+    inputs:
+      command: 'test'
+      arguments: 'tests\MySqlConnector.Tests\MySqlConnector.Tests.csproj -c Baseline'
+      testRunTitle: 'Baseline unit tests'
+  - task: DotNetCoreCLI@2
+    displayName: 'Restore packages'
+    inputs:
+      command: 'restore'
+      arguments: 'tests\SideBySide\SideBySide.csproj /p:Configuration=Baseline'
+      verbosityRestore: 'minimal'
+  - task: DotNetCoreCLI@2
+    displayName: 'Baseline tests'
+    inputs:
+      command: 'test'
+      arguments: 'tests\SideBySide\SideBySide.csproj -c Baseline'
+      testRunTitle: 'Baseline tests'
+    env:
+      DATA__UNSUPPORTEDFEATURES: 'Ed25519,UnixDomainSocket'
+      DATA__CONNECTIONSTRING: 'server=localhost;port=3306;user id=root;password=test;database=mysqltest;ssl mode=none;DefaultCommandTimeout=3600'
+      DATA__CERTIFICATESPATH: '$(Build.Repository.LocalPath)\.ci\server\certs\'
+      DATA__MYSQLBULKLOADERLOCALCSVFILE: '$(Build.Repository.LocalPath)\tests\TestData\LoadData_UTF8_BOM_Unix.CSV'
+      DATA__MYSQLBULKLOADERLOCALTSVFILE: '$(Build.Repository.LocalPath)\tests\TestData\LoadData_UTF8_BOM_Unix.TSV'
+      TF_BUILD: $(TF_BUILD)
+  - task: PublishTestResults@2
+    condition: always()
+    inputs:
+      testResultsFormat: VSTest
+      testResultsFiles: '**/*.trx'
+      testRunTitle: 'Baseline Tests'
+      failTaskOnFailedTests: true
+
+- job: linux_unit_tests
+  dependsOn: linux_build
+  displayName: 'Linux Unit Tests'
+  pool:
+    vmimage: 'ubuntu-latest'
+  steps:
+  - template: '.ci/mysqlconnector-tests-steps.yml'
+
+- job: windows_unit_tests
+  dependsOn: windows_build
+  displayName: 'Windows Tests'
+  pool:
+    vmimage: 'windows-latest'
+  steps:
+  - template: '.ci/install-mysql-windows.yml'
+  - task: UseDotNet@2
+    displayName: 'Install .NET Core 2.1'
+    inputs:
+      version: '2.1.x'
+      packageType: runtime
+  - task: UseDotNet@2
+    displayName: 'Install .NET Core 3.1'
+    inputs:
+      version: 3.1.x
+      packageType: runtime
+  - task: UseDotNet@2
+    displayName: 'Install .NET Core'
+    inputs:
+      version: $(DotNetCoreSdkVersion)
+  - template: '.ci/mysqlconnector-tests-steps.yml'
+  - template: '.ci/conformance-test-steps.yml'
+    parameters:
+      image: 'mysql:8.0'
+      connectionString: 'server=localhost;port=3306;user id=mysqltest;password=test;database=conformance;ssl mode=none;DefaultCommandTimeout=3600;AllowPublicKeyRetrieval=True'
+
+- job: windows_integration_tests_1
+  displayName: 'Windows Integration Tests (Part 1)'
+  pool:
+    vmimage: 'windows-latest'
+  steps:
+  - template: '.ci/install-mysql-windows.yml'
+  - task: UseDotNet@2
+    displayName: 'Install .NET Core'
+    inputs:
+      version: $(DotNetCoreSdkVersion)
+  - task: CopyFiles@2
+    displayName: 'Copy config.json'
+    inputs:
+      sourceFolder: '.ci/config'
+      contents: 'config.json'
+      targetFolder: 'tests/SideBySide'
+  - task: PowerShell@2
+    displayName: 'Remove target frameworks'
+    inputs:
+      targetType: 'inline'
+      script: '((Get-Content .\tests\SideBySide\SideBySide.csproj -Raw) -replace(''<TargetFrameworks>.*</TargetFrameworks>'', ''<TargetFrameworks>net472;net5.0</TargetFrameworks>'')) | Set-Content .\tests\SideBySide\SideBySide.csproj'
+  - task: DotNetCoreCLI@2
+    displayName: 'Restore packages'
+    inputs:
+      command: 'restore'
+  - task: DotNetCoreCLI@2
+    displayName: 'Side by Side tests (net472/net5.0)'
+    inputs:
+      command: 'test'
+      projects: 'tests/SideBySide/SideBySide.csproj'
+      arguments: '-c Release --no-restore'
+      testRunTitle: ${{ format('{0}, $(Agent.OS), {1}, {2}', 'mysql:8.0', 'net472/net5.0', 'No SSL') }}
+    env:
+      DATA__UNSUPPORTEDFEATURES: 'Ed25519,Tls11,UnixDomainSocket'
+      DATA__CONNECTIONSTRING: 'server=localhost;port=3306;user id=mysqltest;password=test;database=mysqltest;ssl mode=none;DefaultCommandTimeout=3600;AllowPublicKeyRetrieval=True;UseCompression=True'
+
+- job: windows_integration_tests_2
+  displayName: 'Windows Integration Tests (Part 2)'
+  pool:
+    vmimage: 'windows-latest'
+  steps:
+  - template: '.ci/install-mysql-windows.yml'
+  - task: UseDotNet@2
+    displayName: 'Install .NET Core 2.1'
+    inputs:
+      version: '2.1.x'
+      packageType: runtime
+  - task: UseDotNet@2
+    displayName: 'Install .NET Core'
+    inputs:
+      version: $(DotNetCoreSdkVersion)
+  - script: copy .ci\config\config.json tests\SideBySide\config.json
+    displayName: 'Copy config.json'
+  - task: PowerShell@2
+    displayName: 'Remove target frameworks'
+    inputs:
+      targetType: 'inline'
+      script: '((Get-Content .\tests\SideBySide\SideBySide.csproj -Raw) -replace(''<TargetFrameworks>.*</TargetFrameworks>'', ''<TargetFrameworks>netcoreapp2.1;netcoreapp3.1</TargetFrameworks>'')) | Set-Content .\tests\SideBySide\SideBySide.csproj'
+  - task: DotNetCoreCLI@2
+    displayName: 'Restore packages'
+    inputs:
+      command: 'restore'
+  - task: DotNetCoreCLI@2
+    displayName: 'Side by Side tests (netcoreapp2.1/netcoreapp3.1)'
+    inputs:
+      command: 'test'
+      projects: 'tests/SideBySide/SideBySide.csproj'
+      arguments: '-c Release -f netcoreapp2.1 --no-restore'
+      testRunTitle: ${{ format('{0}, $(Agent.OS), {1}, {2}', 'mysql:8.0', 'netcoreapp2.1/netcoreapp3.1', 'No SSL') }}
+    env:
+      DATA__UNSUPPORTEDFEATURES: 'Ed25519,Tls11,UnixDomainSocket'
+      DATA__CONNECTIONSTRING: 'server=localhost;port=3306;user id=mysqltest;password=test;database=mysqltest;ssl mode=none;DefaultCommandTimeout=3600;AllowPublicKeyRetrieval=True'
+
+- job: linux_integration_tests
+  dependsOn: linux_build
+  displayName: 'Linux Tests'
+  pool:
+    vmimage: 'ubuntu-latest'
+  strategy:
+    matrix:
+      'MySQL 5.6':
+        image: 'mysql:5.6'
+        unsupportedFeatures: 'Ed25519,Json,Sha256Password,LargePackets,CachingSha2Password,ResetConnection,SessionTrack,Tls13,UuidToBin'
+      'MySQL 5.7':
+        image: 'mysql:5.7'
+        unsupportedFeatures: 'Ed25519,CachingSha2Password,Tls13,UuidToBin'
+      'MySQL 8.0':
+        image: 'mysql:8.0'
+        unsupportedFeatures: 'Ed25519,Tls11'
+      'Percona 5.7':
+        image: 'percona:5.7.22'
+        unsupportedFeatures: 'CachingSha2Password,Ed25519,Tls13,UuidToBin'
+      'MariaDB 10.2':
+        image: 'mariadb:10.2'
+        unsupportedFeatures: 'Ed25519,Json,Sha256Password,CachingSha2Password,RoundDateTime,UuidToBin'
+      'MariaDB 10.3':
+        image: 'mariadb:10.3-bionic'
+        unsupportedFeatures: 'Ed25519,Json,Sha256Password,CachingSha2Password,RoundDateTime,UuidToBin'
+      'MariaDB 10.4':
+        image: 'mariadb:10.4.12'
+        unsupportedFeatures: 'Json,Sha256Password,CachingSha2Password,RoundDateTime,UuidToBin'
+  steps:
+  - template: '.ci/integration-tests-steps.yml'
+    parameters:
+      image: $(image)
+      unsupportedFeatures: $(unsupportedFeatures)
+      DotNetCoreSdkVersion: $(DotNetCoreSdkVersion)

@@ -1,0 +1,175 @@
+--Create table of months this will allow us to make a multi-month churn calculation. 
+WITH months AS
+(
+  SELECT
+  '2017-01-01' AS first_day, --Sets the first term as the row and the second as the column
+  '2017-01-31' AS last_day
+  UNION
+  SELECT
+  '2017-02-01' AS first_day,
+  '2017-02-28' AS last_day
+  UNION
+  SELECT
+  '2017-03-01' AS first_day,
+  '2017-03-31' AS last_day
+)
+
+SELECT * FROM months;
+
+--This adds a cross join to pair the months with the subscribers, which will give us a boulean term to search
+cross_join AS
+(
+SELECT * 
+FROM subscriptions
+CROSS JOIN months
+)
+
+--new table that can use the cross_join to identify active users for the three months
+status AS (
+SELECT 
+  cross_join.id,
+  first_day as 'month',
+  CASE 
+  WHEN (subscription_start < first_day)
+  AND (
+    (subscription_end > first_day)
+  OR (subscription_end IS NULL)
+      ) 
+  THEN 1
+  ELSE 0
+  END AS 'is_active'
+  FROM cross_join
+)
+SELECT * 
+FROM status
+LIMIT 100;
+
+--Modifys the status table to include cancelled clients
+WITH months AS
+(SELECT
+  '2017-01-01' as first_day,
+  '2017-01-31' as last_day
+UNION
+SELECT
+  '2017-02-01' as first_day,
+  '2017-02-28' as last_day
+UNION
+SELECT
+  '2017-03-01' as first_day,
+  '2017-03-31' as last_day
+),
+cross_join AS
+(SELECT *
+FROM subscriptions
+CROSS JOIN months),
+status AS
+(SELECT id, first_day as month,
+--selects active users
+CASE
+  WHEN (subscription_start < first_day) --subscribed before the first of the month
+    AND (
+      subscription_end > first_day --Did not end before the first of the month
+      OR subscription_end IS NULL --has not cancelled
+    ) THEN 1
+  ELSE 0
+END as is_active,
+--selects inactive users
+CASE
+  WHEN subscription_end BETWEEN first_day AND last_day
+ THEN 1
+ ELSE 0
+ END AS 'is_canceled'
+FROM cross_join)
+
+--Aggregate the status by month
+status_aggregate AS
+(SELECT
+month, 
+sum(is_active) as active,
+sum(is_canceled) as canceled
+FROM status
+Group BY month)
+
+--Calculate churn and wonder at how much easier this is in python.
+SELECT
+month,
+1.0 * canceled / active as 'churn_rate'
+from status_aggregate
+GROUP BY 1;
+
+
+--Calculating Churn with two segments
+ WITH months AS (
+ SELECT
+ '2017-01-01' as first_day,
+ '2017-01-31' as last_day
+ UNION
+ SELECT
+ '2017-02-01' as first_day,
+ '2017-02-28' as last_day
+ UNION
+ SELECT
+ '2017-03-01' as first_day,
+ '2017-03-31' as last_day),
+ 
+ cross_join AS (
+ SELECT
+ * FROM subscriptions
+ CROSS JOIN months
+ ),
+ 
+ status AS (
+ SELECT
+ id,
+ first_day AS 'month',
+ CASE
+ WHEN (segment = 87)
+ AND (subscription_start < first_day)
+ AND ((subscription_end > first_day)
+     OR subscription_end IS NULL)
+ THEN 1
+ ELSE 0
+ END AS 'is_active_87',
+    CASE
+ WHEN (segment = 30)
+ AND (subscription_start < first_day)
+ AND ((subscription_end > first_day)
+     OR subscription_end IS NULL)
+ THEN 1
+ ELSE 0
+ END AS 'is_active_30',
+ CASE
+   WHEN (segment = 87)
+   AND subscription_end BETWEEN first_day AND last_day
+   THEN 1
+   ELSE 0
+   END AS 'is_canceled_87',
+    CASE
+   WHEN (segment = 30)
+   AND subscription_end BETWEEN first_day AND last_day
+   THEN 1
+   ELSE 0
+   END AS 'is_canceled_30'
+   FROM cross_join),
+ 
+ status_aggregate AS (
+   SELECT
+ month,
+ sum(is_active_87) as sum_active_87,
+ sum(is_active_30) as sum_active_30,
+ sum(is_canceled_87) as sum_canceled_87,
+ sum(is_canceled_30) as sum_canceled_30
+ from status
+ GROUP BY 1),
+ 
+ churn AS (
+ SELECT 
+ month,
+ 1.0 * sum_canceled_87 / sum_active_87 as Churn_87,
+ 1.0 * sum_canceled_30 / sum_active_30 as Churn_30
+ FROM
+ status_aggregate
+ GROUP BY 1)
+ 
+ SELECT * FROM churn;
+ 

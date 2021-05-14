@@ -1,0 +1,120 @@
+--How to attribute sales or visits to sites from ads
+
+ SELECT * FROM page_visits
+ WHERE user_id = 10069
+ AND utm_source ='buzzfeed';
+ 
+ -- RESULTS
+*/1 - landing_page	2018-01-02 23:14:01	10069	ten-crazy-cool-tshirts-facts	buzzfeed -- First Touch
+2 - shopping_cart	2018-01-02 23:55:01	10069	ten-crazy-cool-tshirts-facts	buzzfeed
+/*
+
+--SECOND RESULTS
+*/1 - landing_page	2018-01-02 23:14:01	10069	ten-crazy-cool-tshirts-facts	buzzfeed
+2 - shopping_cart	2018-01-02 23:55:01	10069	ten-crazy-cool-tshirts-facts	buzzfeed
+3 - checkout	2018-01-04 08:12:01	10069	retargetting-ad	facebook
+4 - purchase	2018-01-04 08:13:01	10069	retargetting-ad	facebook/* -- last touch resuts in a purchase due to a retargetting ad
+
+--How do we know if it was the first or last touch that caused the sale? How can this information inform future purchases?
+--lets us look at the attribution of the last touch for each user. I would think we would also want to know if the last touch was a purchase or not. 
+WITH last_touch AS(
+SELECT user_id,
+MAX(timestamp) as 'last_touch_at'
+FROM page_visits
+GROUP BY user_id
+)
+SELECT lt.user_id,
+lt.last_touch_at,
+pv.utm_source
+FROM last_touch as 'lt'
+JOIN page_visits as 'pv'
+ON pv.user_id = lt.user_id;
+AND lt.last_touch_at = pv.timestamp; 
+
+--I want to see what page what the last touch for each attribution
+ WITH last_touch AS (
+    SELECT user_id,
+       MAX(timestamp) AS 'last_touch_at'
+    FROM page_visits
+    GROUP BY user_id)
+SELECT lt.user_id,
+   lt.last_touch_at,
+   pv.utm_source,
+   pv.page_name
+FROM last_touch AS 'lt'
+JOIN page_visits AS 'pv'
+   ON lt.user_id = pv.user_id
+   AND lt.last_touch_at = pv.timestamp;
+   
+   --Trying to sum what the last page what for each attribution
+ WITH last_touch AS (
+    SELECT user_id,
+       MAX(timestamp) AS 'last_touch_at'
+    FROM page_visits
+    GROUP BY user_id),
+    
+source AS (SELECT lt.user_id,
+   lt.last_touch_at,
+   pv.utm_source,
+   pv.page_name
+FROM last_touch AS 'lt'
+JOIN page_visits AS 'pv'
+   ON lt.user_id = pv.user_id
+   AND lt.last_touch_at = pv.timestamp),
+   
+   pages AS (
+   SELECT
+   distinct page_name as 'page'
+   FROM source),
+   
+   cross_p AS (
+    SELECT * from pages
+   CROSS JOIN source),
+   
+   last AS (
+  SELECT user_id, utm_source,
+     page_name,  
+   CASE
+   WHEN page like '%1%'
+   AND page = page_name
+   THEN 1
+   ELSE 0
+   END AS 'landing',
+  CASE
+   WHEN page like '%2%'
+   AND page = page_name
+   THEN 1
+   ELSE 0
+   END AS 'cart',
+  CASE
+   WHEN page like '%3%'
+   AND page = page_name
+   THEN 1
+   ELSE 0
+   END AS 'checkout',
+  CASE
+   WHEN page like '%4%'
+   AND page = page_name
+   THEN 1
+   ELSE 0
+   END AS 'purchase'
+      from cross_p)
+   
+   select utm_source,
+   sum (landing),
+   sum(cart),
+   sum(checkout),
+   sum(purchase),
+   count(distinct user_id) as 'total',
+   100.0 * sum(purchase) / count(distinct user_id) as 'percent purchased'
+   FROM last
+   group by 1;
+  
+  --RESULTS
+   */utm_source	sum (landing)	sum(cart)	sum(checkout)	sum(purchase)	total	percent purchased
+buzzfeed	33	126	24	9	190	4.73684210526316
+email	0	0	532	167	692	24.1329479768786
+facebook	0	0	340	112	443	25.2821670428894
+google	8	46	135	54	238	22.6890756302521
+medium	21	132	25	7	184	3.80434782608696
+nytimes	38	153	33	9	232	3.87931034482759 /*

@@ -1,0 +1,20 @@
+steps:
+- task: UseDotNet@2
+  displayName: 'Install .NET Core'
+  inputs:
+    version: $(DotNetCoreSdkVersion)
+- task: DownloadPipelineArtifact@0
+  inputs:
+    artifactName: 'MySqlConnector.Tests-5.0-$(Agent.OS)'
+    targetPath: $(System.DefaultWorkingDirectory)
+- task: DotNetCoreCLI@2
+  displayName: 'Run MySqlConnector.Tests'
+  inputs:
+    command: 'custom'
+    custom: 'vstest'
+    arguments: 'MySqlConnector.Tests.dll /logger:trx'
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: VSTest
+    testResultsFiles: '**/*.trx'
+    testRunTitle: 'MySqlConnector.Tests-5.0-$(Agent.OS)'
