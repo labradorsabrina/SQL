@@ -1,53 +1,53 @@
-###############################################################
-###############################################################
--- Guided Project: SQL CASE Statements
-###############################################################
-###############################################################
-
-
-#############################
+--		SQL CASE Statements
 -- Task One: The SQL CASE Statement
 -- In this task, we will learn how to write a conditional
 -- statement using a single CASE clause
-#############################
-
 -- 1.1: Retrieve all the data in the employees table
+
 SELECT * FROM employees;
 
 -- 1.2: Change M to Male and F to Female in the employees table
 
+SELECT emp_no, first_name, last_name
+,CASE gender
+	WHEN 'M' THEN 'Male'
+	WHEN 'F' THEN 'Female'
+	ELSE 'Error'
+END AS gender
+FROM employees;
 
--- 1.3: This gives the same result as 1.2
-
-
--- 1.4: This gives the same result as 1.2 & 1.3
-
-
-
-#############################
 -- Task Two: Adding multiple conditions to a CASE statement
 -- In this task, we will learn how to add multiple conditions to a 
 -- CASE statement
-#############################
 
 -- 2.1: Retrieve all the data in the customers table
 SELECT * FROM customers;
 
 -- 2.2: Create a column called Age_Category that returns Young for ages less than 30,
 -- Aged for ages greater than 60, and Middle Aged otherwise
-
+SELECT age,
+	CASE
+		WHEN age < 30 THEN 'Young'
+		WHEN age > 60 THEN 'Aged'
+		ELSE 'Middle Aged'
+	END AS Age_Category
+FROM customers;
 
 -- 2.3: Retrieve a list of employees that were employed before 1990, between 1990 and 1995, and 
 -- after 1995
-SELECT * FROM employees
+SELECT * FROM employees;
 
+SELECT emp_no, hire_date, EXTRACT(YEAR FROM hire_date) AS Year,
+	CASE
+		WHEN EXTRACT(YEAR FROM hire_date) < '1990' THEN 'Employed before 1990'
+		WHEN EXTRACT(YEAR FROM hire_date) >= '1990' AND EXTRACT(YEAR FROM hire_date) <= '1995' THEN 'Employed between 1990-1995'
+		ELSE 'Employed after 1995'
+	END
+FROM employees;
 
-
-#############################
 -- Task Three: The CASE Statement and Aggregate Functions
 -- In this task, we will see how to use the CASE clause and
 -- SQL aggregate functions to retrieve data
-#############################
 
 -- 3.1: Retrieve the average salary of all employees
 SELECT * FROM salaries;
@@ -71,12 +71,9 @@ ORDER BY AVG(salary) DESC;
 -- 3.4: Count the number of employees in each salary category
 
 
-
-#############################
 -- Task Four: The CASE Statement and SQL Joins
 -- -- In this task, we will see how to use the CASE clause and
 -- SQL Joins to retrieve data
-#############################
 
 -- 4.1: Retrieve all the data from the employees and dept_manager tables
 SELECT * FROM employees
