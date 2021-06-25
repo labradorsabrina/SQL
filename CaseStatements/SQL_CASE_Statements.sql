@@ -61,23 +61,54 @@ ORDER BY AVG(salary) DESC;
 -- 80000, return Paid Well. If the average salary is less than 80000, return Underpaid,
 -- otherwise, return Unpaid
 
-
+SELECT emp_no, ROUND(AVG(salary), 3) AS Avg_salary
+	,CASE
+		WHEN AVG(salary) > 80000 THEN 'Paid Well'
+		WHEN AVG(salary) <= 80000 THEN 'Underpaid'
+		ELSE 'Unpaid'
+	END AS salary_bin
+FROM salaries
+GROUP BY emp_no
+ORDER BY AVG(salary) DESC;
 
 -- 3.3: Retrieve a list of the average salary of employees. If the average salary is more than
 -- 80000 but less than 100000, return Paid Well. If the average salary is less than 80000, 
 -- return Underpaid, otherwise, return Manager
 
+SELECT emp_no, ROUND(AVG(salary), 3) AS Avg_salary
+	,CASE
+		WHEN AVG(salary) > 80000 AND AVG(salary) <= 100000 THEN 'Paid Well'
+		WHEN AVG(salary) <= 80000 THEN 'Underpaid'
+		ELSE 'Manager'
+	END AS salary_bin
+FROM salaries
+GROUP BY emp_no
+ORDER BY AVG(salary) DESC;
+
 
 -- 3.4: Count the number of employees in each salary category
 
+SELECT A.salary_bin, COUNT(*)
+FROM(
+SELECT emp_no, ROUND(AVG(salary), 3) AS Avg_salary
+	,CASE
+		WHEN AVG(salary) > 80000 AND AVG(salary) <= 100000 THEN 'Paid Well'
+		WHEN AVG(salary) <= 80000 THEN 'Underpaid'
+		ELSE 'Manager'
+	END AS salary_bin
+FROM salaries
+GROUP BY emp_no
+ORDER BY AVG(salary) DESC
+) A
+GROUP BY A.salary_bin;
 
 -- Task Four: The CASE Statement and SQL Joins
 -- -- In this task, we will see how to use the CASE clause and
 -- SQL Joins to retrieve data
 
 -- 4.1: Retrieve all the data from the employees and dept_manager tables
-SELECT * FROM employees
-ORDER BY emp_no DESC;
+SELECT * FROM Sales.employees
+ORDER BY emp_no;
 
 SELECT * FROM dept_manager;
 
@@ -101,19 +132,21 @@ WHERE e.emp_no > 109990;
 -- employee is also a manager, according to the data in the
 -- dept_manager table, or a regular employee
 
+SELECT e.emp_no, e.first_name, e.last_name,
+CASE
+	WHEN dm.emp_no IS NOT NULL THEN 'Manager'
+    ELSE 'Employee'
+    END AS is_manager
+FROM employees e
+LEFT JOIN dept_manager dm 
+ON dm.emp_no = e.emp_no
+ORDER BY dm.emp_no;
 
--- 4.5: Obtain a result set containing the employee number, first name, and last name
--- of all employees with a number greater than '109990'. Create a 4th column in the query,
--- indicating whether this employee is also a manager, according to the data in the
--- dept_manager table, or a regular employee
 
-
-
-#############################
 -- Task Five: The CASE Statement together with Aggregate Functions and Joins
 -- In this task, we will see how to use the CASE clause together with
 -- SQL aggregate functions and SQL Joins to retrieve data
-#############################
+
 
 -- 5.1: Retrieve all the data from the employees and salaries tables
 SELECT * FROM employees;
@@ -133,6 +166,19 @@ employees' maximum and minimum salary. Also, add a column called
 is more than $30,000, 'Salary was raised by more than $20,000 but less than $30,000',
 if the difference is between $20,000 and $30,000, 'Salary was raised by less than $20,000'
 if the difference is less than $20,000 */
+
+SELECT e.emp_no, e.first_name, e.last_name
+,MAX(s.salary) - MIN(s.salary) AS salary_difference
+,CASE
+	WHEN (MAX(s.salary) - MIN(s.salary)) >= 30000 THEN 'Salary was raised by more than $30,000'
+    WHEN (MAX(s.salary) - MIN(s.salary)) BETWEEN 20000 AND 30000 THEN 'Salary was raised by more than $20,000 but less than $30,000'
+	ELSE 'Salary was raised by less than $20,000'
+END AS salary_increase
+FROM employees e
+JOIN salaries s 
+ON e.emp_no = s.emp_no
+GROUP BY e.emp_no
+ORDER BY salary_increase;
 
 
 -- 5.4: Retrieve all the data from the employees and dept_emp tables
@@ -158,11 +204,10 @@ GROUP BY e.emp_no
 LIMIT 100;
 
 
-#############################
 -- Task Six: Transposing data using the CASE clause
 -- In this task, we will learn how to use the SQL CASE statement to
 -- transpose retrieved data
-#############################
+
 
 -- 6.1: Retrieve all the data from the sales table
 SELECT * FROM sales;
@@ -170,7 +215,7 @@ SELECT * FROM sales;
 -- 6.2: Retrieve the count of the different profit_category from the sales table
 SELECT a.profit_category, COUNT(*)
 FROM (
-SELECT order_line, profit,
+SELECT 'Order Line', profit,
 CASE
 	WHEN profit < 0 THEN 'No Profit'
 	WHEN profit > 0 AND profit < 500 THEN 'Low Profit'
@@ -182,11 +227,18 @@ FROM sales
 GROUP BY a.profit_category;
 
 -- 6.3: Transpose 6.2 above
-
+SELECT 
+	SUM(CASE WHEN profit < 0 THEN 1 ELSE 0 END) AS no_profit
+    ,SUM(CASE WHEN profit BETWEEN 0 AND 500 THEN 1 ELSE 0 END) AS low_profit
+	,SUM(CASE WHEN profit BETWEEN 500 AND 1500 THEN 1 ELSE 0 END) AS good_profit
+    ,SUM(CASE WHEN profit >= 1500 THEN 1 ELSE 0 END) AS high_profit
+FROM sales
 
 -- 6.4: Retrieve the number of employees in the first four departments in the dept_emp table
 
 SELECT * FROM dept_emp;
+
+SELECT DISTINCT dept_no FROM dept_emp;
 
 SELECT dept_no, COUNT(*) 
 FROM dept_emp
@@ -195,4 +247,11 @@ GROUP BY dept_no
 ORDER BY dept_no;
 
 -- 6.5: Transpose 6.4 above
+
+SELECT 
+	SUM(CASE WHEN dept_no = 'd001' THEN 1 ELSE 0 END) dep_one
+    ,SUM(CASE WHEN dept_no = 'd002' THEN 1 ELSE 0 END) dep_two
+    ,SUM(CASE WHEN dept_no = 'd003' THEN 1 ELSE 0 END) dep_three
+    ,SUM(CASE WHEN dept_no = 'd004' THEN 1 ELSE 0 END) dep_four
+FROM dept_emp;
 
